@@ -7,7 +7,7 @@
 
     <!-- Import transformers.js -->
     <script type="module">
-        import { pipeline } from '/static/transformers.js';
+        import { pipeline, read_audio } from '/static/transformers.js';
 
         // Global model pipeline
         let transcriber = null;
@@ -104,28 +104,33 @@
                     await loadModel();
                 }
 
-                // Read file as ArrayBuffer
-                const arrayBuffer = await selectedFile.arrayBuffer();
-
-                // Create a blob URL that transformers.js can read
-                // Note: transformers.js expects a file path or URL
-                // For browser, we need to convert to a format it can process
-                const audioBlob = new Blob([arrayBuffer], { type: selectedFile.type });
-                const audioUrl = URL.createObjectURL(audioBlob);
-
-                // For transformers.js, we need to use the file directly
-                // The pipeline can accept a File object or Blob
                 statusDisplay.innerHTML = '<span class="loading"></span>Processing audio...';
 
-                const output = await transcriber(selectedFile);
+                // Decode using Web Audio API
+                const arrayBuffer = await selectedFile.arrayBuffer();
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+                // Extract mono channel and resample to 16kHz (Whisper's expected rate)
+                const channelData = audioBuffer.getChannelData(0);
+                const samplingRate = audioBuffer.sampleRate;
+
+                let audioData = channelData;
+                if (samplingRate !== 16000) {
+                    const ratio = 16000 / samplingRate;
+                    const newLength = Math.floor(channelData.length * ratio);
+                    audioData = new Float32Array(newLength);
+                    for (let i = 0; i < newLength; i++) {
+                        audioData[i] = channelData[Math.floor(i / ratio)];
+                    }
+                }
+
+                const output = await transcriber(audioData);
 
                 transcriptionText.textContent = output.text || output[0]?.text || "";
                 resultDisplay.style.display = 'block';
                 statusDisplay.textContent = 'Complete!';
                 statusDisplay.className = 'status success';
-
-                // Clean up
-                URL.revokeObjectURL(audioUrl);
 
             } catch (error) {
                 statusDisplay.textContent = `Failed: ${error.message}`;
