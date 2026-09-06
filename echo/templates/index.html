@@ -31,7 +31,8 @@
                 // Options: "Xenova/whisper-tiny", "Xenova/whisper-small", "Xenova/whisper-base"
                 transcriber = await pipeline(
                     "automatic-speech-recognition",
-                    "Xenova/whisper-tiny",  // ~40MB, fastest
+                    "/Xenova/whisper-tiny", // local files
+                    //"Xenova/whisper-tiny",  // ~40MB, fastest
                     // "Xenova/whisper-small",  // ~240MB, better accuracy
                     { 
                         device: "auto"  // Uses WebGPU if available, falls back to CPU

@@ -29,6 +29,10 @@ app = FastAPI(
 BASE_DIR = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
+# Mount model files directory
+MODELS_DIR = BASE_DIR / "models"
+app.mount("/models", StaticFiles(directory=str(MODELS_DIR)), name="models")
+
 # Load the transcription pipeline (Whisper)
 # This loads on startup - may take a few seconds
 # options:
