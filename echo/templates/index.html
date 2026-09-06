@@ -25,23 +25,29 @@
         // Load the Whisper model
         async function loadModel() {
             try {
+                console.log("start loading model")
+
                 modelStatus.textContent = "Loading Whisper model... (this may take a minute on first use)";
                 modelStatus.className = "model-status model-loading";
 
-                // Options: "Xenova/whisper-tiny", "Xenova/whisper-small", "Xenova/whisper-base"
+                // load model pipeline
                 transcriber = await pipeline(
                     "automatic-speech-recognition",
-                    "/Xenova/whisper-tiny", // local files
+                    "Xenova/whisper-tiny", // local files
                     //"Xenova/whisper-tiny",  // ~40MB, fastest
                     // "Xenova/whisper-small",  // ~240MB, better accuracy
                     { 
-                        device: "auto"  // Uses WebGPU if available, falls back to CPU
+                        device: "auto",          // Uses WebGPU if available, falls back to CPU
+                        chunk_length_s: 30,      // Process audio in 30-second chunks
+                        stride_length_s: 5,      // Overlap between chunks (prevents gaps)
+                        return_timestamps: true // Optional: get word timestamps
+                        // force_full_sequences: true // foutief?
                     }
                 );
 
                 modelStatus.textContent = "Model ready!";
                 modelStatus.className = "model-status model-ready";
-                console.log("Whisper model loaded successfully");
+                console.log("model loaded successfully");
             } catch (error) {
                 modelStatus.textContent = `Failed to load model: ${error.message}`;
                 modelStatus.className = "model-status error";
@@ -50,7 +56,9 @@
         }
 
         // Start loading model on page load
+        console.log("loading model")
         loadModel();
+        console.log("model loading done")
 
         // --- File handling ---
         dropArea.addEventListener('click', () => fileInput.click());
@@ -106,31 +114,17 @@
 
                 statusDisplay.innerHTML = '<span class="loading"></span>Processing audio...';
 
-                // Decode using Web Audio API
-                const arrayBuffer = await selectedFile.arrayBuffer();
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-                // Extract mono channel and resample to 16kHz (Whisper's expected rate)
-                const channelData = audioBuffer.getChannelData(0);
-                const samplingRate = audioBuffer.sampleRate;
-
-                let audioData = channelData;
-                if (samplingRate !== 16000) {
-                    const ratio = 16000 / samplingRate;
-                    const newLength = Math.floor(channelData.length * ratio);
-                    audioData = new Float32Array(newLength);
-                    for (let i = 0; i < newLength; i++) {
-                        audioData[i] = channelData[Math.floor(i / ratio)];
-                    }
-                }
-
+                console.log("start transcribe")
+                const url = URL.createObjectURL(selectedFile);
+                const audioData = await read_audio(url, 16000);
                 const output = await transcriber(audioData);
+                URL.revokeObjectURL(url); // Clean up
 
                 transcriptionText.textContent = output.text || output[0]?.text || "";
                 resultDisplay.style.display = 'block';
                 statusDisplay.textContent = 'Complete!';
                 statusDisplay.className = 'status success';
+                console.log("transcribing done")
 
             } catch (error) {
                 statusDisplay.textContent = `Failed: ${error.message}`;
