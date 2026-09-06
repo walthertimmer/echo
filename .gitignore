@@ -5,3 +5,4 @@ echo/__pycache__/main.cpython-313.pyc
 echo/__pycache__/**
 
 echo/__pycache__/main.cpython-313.pyc
+*.wasm
