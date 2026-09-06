@@ -1,0 +1,4 @@
+*.onnx
+echo/__pycache__/main.cpython-313.pyc
+.DS_Store
+*.pyc

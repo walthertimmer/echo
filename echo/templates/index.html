@@ -4,101 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Audio Transcription Tool</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: #0f172a;
-            color: #e2e8f0;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 2rem;
-        }
-        .container { max-width: 800px; width: 100%; }
-        h1 { font-size: 2rem; margin-bottom: 1rem; text-align: center; color: #94a3b8; }
-        .card {
-            background: #1e293b;
-            border-radius: 12px;
-            padding: 2rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-        }
-        .upload-area {
-            border: 2px dashed #334155;
-            border-radius: 8px;
-            padding: 3rem;
-            text-align: center;
-            cursor: pointer;
-            transition: border-color 0.2s;
-            margin-bottom: 1.5rem;
-        }
-        .upload-area:hover { border-color: #475569; }
-        .upload-area.dragover { border-color: #64748b; background: #0f172a; }
-        #file-input { display: none; }
-        .file-name { margin-top: 1rem; color: #94a3b8; word-break: break-all; }
-        #transcribe-btn {
-            background: #3b82f6;
-            color: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 6px;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: background 0.2s;
-            width: 100%;
-        }
-        #transcribe-btn:hover { background: #2563eb; }
-        #transcribe-btn:disabled { background: #475569; cursor: not-allowed; }
-        .result {
-            margin-top: 2rem;
-            padding: 1.5rem;
-            background: #0f172a;
-            border-radius: 8px;
-            display: none;
-        }
-        .result h3 { color: #94a3b8; margin-bottom: 1rem; }
-        .result-text {
-            background: #1e293b;
-            padding: 1rem;
-            border-radius: 6px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        .status { margin-top: 1rem; color: #64748b; font-size: 0.875rem; }
-        .error { color: #ef4444; }
-        .success { color: #22c55e; }
-        .loading {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid #475569;
-            border-radius: 50%;
-            border-top-color: #3b82f6;
-            animation: spin 1s ease-in-out infinite;
-            margin-right: 0.5rem;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Audio Transcription</h1>
-        <div class="card">
-            <div class="upload-area" id="drop-area">
-                <p>Drag & drop audio file here or click to browse</p>
-                <p class="file-name" id="file-name">No file selected</p>
-            </div>
-            <input type="file" id="file-input" accept="audio/*" />
-            <button id="transcribe-btn" disabled>Transcribe</button>
-            <p class="status" id="status"></p>
-        </div>
-        <div class="card result" id="result">
-            <h3>Transcription Result</h3>
-            <div class="result-text" id="transcription-text"></div>
-        </div>
-    </div>
-    <script>
+
+    <!-- Import transformers.js -->
+    <script type="module">
+        import { pipeline } from '/static/transformers.js';
+
+        // Global model pipeline
+        let transcriber = null;
+        let selectedFile = null;
+
         const fileInput = document.getElementById('file-input');
         const dropArea = document.getElementById('drop-area');
         const fileNameDisplay = document.getElementById('file-name');
@@ -106,8 +20,38 @@
         const statusDisplay = document.getElementById('status');
         const resultDisplay = document.getElementById('result');
         const transcriptionText = document.getElementById('transcription-text');
-        let selectedFile = null;
+        const modelStatus = document.getElementById('model-status');
 
+        // Load the Whisper model
+        async function loadModel() {
+            try {
+                modelStatus.textContent = "Loading Whisper model... (this may take a minute on first use)";
+                modelStatus.className = "model-status model-loading";
+
+                // Options: "Xenova/whisper-tiny", "Xenova/whisper-small", "Xenova/whisper-base"
+                transcriber = await pipeline(
+                    "automatic-speech-recognition",
+                    "Xenova/whisper-tiny",  // ~40MB, fastest
+                    // "Xenova/whisper-small",  // ~240MB, better accuracy
+                    { 
+                        device: "auto"  // Uses WebGPU if available, falls back to CPU
+                    }
+                );
+
+                modelStatus.textContent = "Model ready!";
+                modelStatus.className = "model-status model-ready";
+                console.log("Whisper model loaded successfully");
+            } catch (error) {
+                modelStatus.textContent = `Failed to load model: ${error.message}`;
+                modelStatus.className = "model-status error";
+                console.error("Model loading error:", error);
+            }
+        }
+
+        // Start loading model on page load
+        loadModel();
+
+        // --- File handling ---
         dropArea.addEventListener('click', () => fileInput.click());
 
         fileInput.addEventListener('change', (e) => {
@@ -145,23 +89,43 @@
             }
         }, false);
 
+        // --- Transcription ---
         transcribeBtn.addEventListener('click', async () => {
-            if (!selectedFile) return;
+            if (!selectedFile || !transcriber) return;
+
             statusDisplay.innerHTML = '<span class="loading"></span>Transcribing...';
             transcribeBtn.disabled = true;
             resultDisplay.style.display = 'none';
 
-            const formData = new FormData();
-            formData.append('file', selectedFile);
-
             try {
-                const response = await fetch('/transcribe/', { method: 'POST', body: formData });
-                if (!response.ok) throw new Error(`Error: ${response.status} - ${response.statusText}`);
-                const data = await response.json();
-                transcriptionText.textContent = data.transcription;
+                // Show loading state for model if not ready
+                if (!transcriber) {
+                    await loadModel();
+                }
+
+                // Read file as ArrayBuffer
+                const arrayBuffer = await selectedFile.arrayBuffer();
+
+                // Create a blob URL that transformers.js can read
+                // Note: transformers.js expects a file path or URL
+                // For browser, we need to convert to a format it can process
+                const audioBlob = new Blob([arrayBuffer], { type: selectedFile.type });
+                const audioUrl = URL.createObjectURL(audioBlob);
+
+                // For transformers.js, we need to use the file directly
+                // The pipeline can accept a File object or Blob
+                statusDisplay.innerHTML = '<span class="loading"></span>Processing audio...';
+
+                const output = await transcriber(selectedFile);
+
+                transcriptionText.textContent = output.text || output[0]?.text || "";
                 resultDisplay.style.display = 'block';
                 statusDisplay.textContent = 'Complete!';
                 statusDisplay.className = 'status success';
+
+                // Clean up
+                URL.revokeObjectURL(audioUrl);
+
             } catch (error) {
                 statusDisplay.textContent = `Failed: ${error.message}`;
                 statusDisplay.className = 'status error';
@@ -171,5 +135,124 @@
             }
         });
     </script>
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+        }
+        .container { max-width: 800px; width: 100%; }
+        h1 { font-size: 2rem; margin-bottom: 1rem; text-align: center; color: #94a3b8; }
+
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            margin-bottom: 1.5rem;
+        }
+
+        .upload-area {
+            border: 2px dashed #334155;
+            border-radius: 8px;
+            padding: 3rem;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s;
+            margin-bottom: 1.5rem;
+        }
+        .upload-area:hover { border-color: #475569; }
+        .upload-area.dragover { border-color: #64748b; background: #0f172a; }
+        #file-input { display: none; }
+        .file-name { margin-top: 1rem; color: #94a3b8; word-break: break-all; }
+
+        #transcribe-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            width: 100%;
+        }
+        #transcribe-btn:hover { background: #2563eb; }
+        #transcribe-btn:disabled { background: #475569; cursor: not-allowed; }
+
+        .result {
+            padding: 1.5rem;
+            background: #0f172a;
+            border-radius: 8px;
+            display: none;
+        }
+        .result h3 { color: #94a3b8; margin-bottom: 1rem; }
+        .result-text {
+            background: #1e293b;
+            padding: 1rem;
+            border-radius: 6px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .status { margin-top: 1rem; color: #64748b; font-size: 0.875rem; }
+        .error { color: #ef4444; }
+        .success { color: #22c55e; }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #475569;
+            border-radius: 50%;
+            border-top-color: #3b82f6;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 0.5rem;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .model-status {
+            font-size: 0.875rem;
+            color: #64748b;
+            margin-top: 0.5rem;
+        }
+        .model-loading { color: #fbbf24; }
+        .model-ready { color: #22c55e; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Audio Transcription</h1>
+        
+        <div class="card">
+            <div class="model-status" id="model-status">
+                Loading Whisper model...
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="upload-area" id="drop-area">
+                <p>Drag & drop audio file here or click to browse</p>
+                <p class="file-name" id="file-name">No file selected</p>
+            </div>
+            <input type="file" id="file-input" accept="audio/*" />
+            <button id="transcribe-btn" disabled>Transcribe</button>
+            <p class="status" id="status"></p>
+        </div>
+
+        <div class="card result" id="result">
+            <h3>Transcription Result</h3>
+            <div class="result-text" id="transcription-text"></div>
+        </div>
+    </div>
+
+
 </body>
 </html>
