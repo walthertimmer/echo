@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>vLLM Whisper Turbo Transcription</title>
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+        }
+        .container { max-width: 800px; width: 100%; }
+        h1 { font-size: 2rem; margin-bottom: 1rem; text-align: center; color: #94a3b8; }
+
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            margin-bottom: 1.5rem;
+        }
+
+        .upload-area {
+            border: 2px dashed #334155;
+            border-radius: 8px;
+            padding: 3rem;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s;
+            margin-bottom: 1.5rem;
+        }
+        .upload-area:hover { border-color: #475569; }
+        .upload-area.dragover { border-color: #64748b; background: #0f172a; }
+        #file-input { display: none; }
+        .file-name { margin-top: 1rem; color: #94a3b8; word-break: break-all; }
+
+        #transcribe-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            width: 100%;
+        }
+        #transcribe-btn:hover { background: #2563eb; }
+        #transcribe-btn:disabled { background: #475569; cursor: not-allowed; }
+
+        .result {
+            padding: 1.5rem;
+            background: #0f172a;
+            border-radius: 8px;
+            display: none;
+        }
+        .result h3 { color: #94a3b8; margin-bottom: 1rem; }
+        .result-text {
+            background: #1e293b;
+            padding: 1rem;
+            border-radius: 6px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .status { margin-top: 1rem; color: #64748b; font-size: 0.875rem; }
+        .error { color: #ef4444; }
+        .success { color: #22c55e; }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #475569;
+            border-radius: 50%;
+            border-top-color: #3b82f6;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 0.5rem;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .model-status {
+            font-size: 0.875rem;
+            color: #64748b;
+            margin-top: 0.5rem;
+        }
+        .model-loading { color: #fbbf24; }
+        .model-ready { color: #22c55e; }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        .info-item {
+            background: #0f172a;
+            padding: 0.75rem;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .info-item dt { color: #94a3b8; font-size: 0.75rem; text-transform: uppercase; }
+        .info-item dd { color: #e2e8f0; font-size: 1rem; margin-top: 0.25rem; }
+
+        .settings {
+            background: #0f172a;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        .settings h4 { color: #94a3b8; margin-bottom: 0.5rem; }
+        .setting-row {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        .setting-row label {
+            flex: 1;
+            font-size: 0.875rem;
+            color: #cbd5e1;
+        }
+        .setting-row input, .setting-row select {
+            padding: 0.5rem;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            background: #1e293b;
+            color: #e2e8f0;
+            font-size: 0.875rem;
+            width: 120px;
+        }
+        .setting-row input[type="range"] {
+            width: 150px;
+        }
+        .value-display {
+            min-width: 40px;
+            text-align: right;
+            color: #94a3b8;
+            font-size: 0.875rem;
+        }
+
+        .backend-selector {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .backend-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            background: #1e293b;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+        .backend-btn.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>vLLM Whisper Turbo Transcription</h1>
+        
+        <div class="card">
+            <h3>Model Status</h3>
+            <div class="model-status" id="model-status">
+                Checking model status...
+            </div>
+            <div class="info-grid" id="model-info">
+                <div class="info-item">
+                    <dt>Model</dt>
+                    <dd id="model-name">-</dd>
+                </div>
+                <div class="info-item">
+                    <dt>Status</dt>
+                    <dd id="model-status-badges">-</dd>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="upload-area" id="drop-area">
+                <p>Drag & drop audio file here or click to browse</p>
+                <p class="file-name" id="file-name">No file selected</p>
+            </div>
+            <input type="file" id="file-input" accept="audio/*" />
+            
+            <div class="settings">
+                <h4>Transcription Settings</h4>
+                <div class="setting-row">
+                    <label for="temperature">Temperature:</label>
+                    <input type="range" id="temperature" min="0" max="1" step="0.1" value="0">
+                    <span class="value-display" id="temperature-value">0.0</span>
+                </div>
+                <div class="setting-row">
+                    <label for="max-tokens">Max Tokens:</label>
+                    <input type="number" id="max-tokens" min="1" max="512" value="64">
+                </div>
+                <div class="setting-row">
+                    <label for="language">Language:</label>
+                    <select id="language">
+                        <option value="">Auto Detect</option>
+                        <option value="en">English</option>
+                        <option value="nl">Dutch</option>
+                        <option value="fr">French</option>
+                        <option value="de">German</option>
+                        <option value="es">Spanish</option>
+                    </select>
+                </div>
+            </div>
+            
+            <button id="transcribe-btn" disabled>Transcribe</button>
+            <p class="status" id="status"></p>
+        </div>
+
+        <div class="card result" id="result">
+            <h3>Transcription Result</h3>
+            <div class="info-grid" id="result-info">
+                <div class="info-item">
+                    <dt>Processing Time</dt>
+                    <dd id="processing-time">-</dd>
+                </div>
+            </div>
+            <div class="result-text" id="transcription-text"></div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('file-input');
+        const dropArea = document.getElementById('drop-area');
+        const fileNameDisplay = document.getElementById('file-name');
+        const transcribeBtn = document.getElementById('transcribe-btn');
+        const statusDisplay = document.getElementById('status');
+        const resultDisplay = document.getElementById('result');
+        const transcriptionText = document.getElementById('transcription-text');
+        const modelStatus = document.getElementById('model-status');
+        const modelName = document.getElementById('model-name');
+        const modelStatusBadges = document.getElementById('model-status-badges');
+        const processingTime = document.getElementById('processing-time');
+        
+        const temperatureSlider = document.getElementById('temperature');
+        const temperatureValue = document.getElementById('temperature-value');
+        const maxTokensInput = document.getElementById('max-tokens');
+        const languageSelect = document.getElementById('language');
+        
+        let selectedFile = null;
+
+        // Update temperature value display
+        temperatureSlider.addEventListener('input', () => {
+            temperatureValue.textContent = temperatureSlider.value;
+        });
+
+        // --- Model status check ---
+        async function checkModelStatus() {
+            try {
+                const response = await fetch('/model/status');
+                const data = await response.json();
+                
+                modelName.textContent = data.model_name || '-';
+                modelStatusBadges.textContent = data.model_loaded ? 'Ready' : 'Loading...';
+                modelStatusBadges.className = data.model_loaded ? 'success' : 'model-loading';
+                modelStatus.textContent = data.model_loaded ? 'Model ready!' : 'Model loading...';
+                modelStatus.className = data.model_loaded ? 'model-status model-ready' : 'model-status model-loading';
+                
+                if (data.model_loaded) {
+                    transcribeBtn.disabled = !selectedFile;
+                }
+            } catch (error) {
+                modelStatus.textContent = `Failed to check model status: ${error.message}`;
+                modelStatus.className = 'model-status error';
+            }
+        }
+
+        // Check model status on page load
+        checkModelStatus();
+        
+        // Periodically check model status
+        setInterval(checkModelStatus, 5000);
+
+        // --- File handling ---
+        dropArea.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                selectedFile = e.target.files[0];
+                fileNameDisplay.textContent = selectedFile.name;
+                transcribeBtn.disabled = false;
+            }
+        });
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, () => dropArea.classList.add('dragover'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, () => dropArea.classList.remove('dragover'), false);
+        });
+
+        dropArea.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                selectedFile = files[0];
+                fileInput.files = files;
+                fileNameDisplay.textContent = selectedFile.name;
+                transcribeBtn.disabled = false;
+            }
+        }, false);
+
+        // --- Transcription ---
+        transcribeBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            statusDisplay.innerHTML = '<span class="loading"></span>Transcribing...';
+            transcribeBtn.disabled = true;
+            resultDisplay.style.display = 'none';
+
+            try {
+                // Check if model is ready
+                const modelCheck = await fetch('/model/status');
+                const modelData = await modelCheck.json();
+                
+                if (!modelData.model_loaded) {
+                    statusDisplay.textContent = 'Model is still loading. Please wait...';
+                    return;
+                }
+
+                statusDisplay.innerHTML = '<span class="loading"></span>Uploading audio...';
+
+                // Create form data
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+                formData.append('temperature', temperatureSlider.value);
+                formData.append('max_tokens', maxTokensInput.value);
+                if (languageSelect.value) {
+                    formData.append('language', languageSelect.value);
+                }
+
+                const response = await fetch('/transcribe', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status} - ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                
+                transcriptionText.textContent = result.transcription || '';
+                processingTime.textContent = result.processing_time ? `${result.processing_time.toFixed(2)}s` : '-';
+                
+                resultDisplay.style.display = 'block';
+                statusDisplay.textContent = 'Complete!';
+                statusDisplay.className = 'status success';
+                
+                console.log('Transcription result:', result);
+
+            } catch (error) {
+                statusDisplay.textContent = `Failed: ${error.message}`;
+                statusDisplay.className = 'status error';
+                console.error('Transcription error:', error);
+            } finally {
+                transcribeBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

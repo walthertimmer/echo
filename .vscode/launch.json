@@ -8,13 +8,17 @@
             "name": "Python Debugger: FastAPI",
             "type": "debugpy",
             "request": "launch",
-            "python": "${workspaceFolder}/echo/.venv/bin/python",
+            "python": "${workspaceFolder}/echoincluded/.venv/bin/python",
+            "cwd": "${workspaceFolder}/echoincluded",
             "module": "uvicorn",
             "args": [
-                "echo.main:app",
+                "main:app",
                 "--reload"
             ],
-            "jinja": true
+            "jinja": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/echoincluded"
+            }
         }
     ]
 }

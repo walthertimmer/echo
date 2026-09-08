@@ -1,0 +1,24 @@
+[project]
+name = "echo"
+version = "1"
+description = "Transcribe audio files using vLLM Whisper Turbo Quantized Model"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "transformers",
+    "torch",
+    "soundfile",
+    "jinja2",
+    "python-multipart",
+    "numpy",
+    "httpx"
+]
+
+[optional-dependencies]
+vllm = ["vllm"]
+torchaudio = ["torchaudio"]
+
+[tool.uv]
+extra-index-url = ["https://pypi.nvidia.com"]
